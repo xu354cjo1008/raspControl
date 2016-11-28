@@ -1,1 +1,1 @@
-int runClient(void);
+int runClient(char *address, int port);

@@ -9,7 +9,7 @@
 #include <sys/types.h>
 #include <time.h>
 
-int runServer()
+int runServer(int port)
 {
 
     int listenfd = 0, connfd = 0;
@@ -24,9 +24,11 @@ int runServer()
 
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serv_addr.sin_port = htons(5000);
+    serv_addr.sin_port = htons(port);
 
     bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
+
+    printf("listen to port: %d\n", port);
 
     listen(listenfd, 10);
 

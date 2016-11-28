@@ -19,12 +19,16 @@ int main(int argc, char **argv)
         {"help", 0, NULL, 'h'},
         {"version", 0, NULL, 'v'},
         {"mode", 1, NULL, 'm'},
+        {"addr", 1, NULL, 'a'},
+        {"port", 1, NULL, 'p'},
         {NULL, 0, NULL, 0}
     };
 
     int option_index = 0;
     int c = 0;
     int mode = 0;
+    char *addr = "127.0.0.1";
+    int port = 80;
 
     while((c = getopt_long(argc, argv, "hvm:", long_options, &option_index)) != -1) {
         switch(c) {
@@ -41,6 +45,12 @@ int main(int argc, char **argv)
                 mode = 0;
             }
             break;
+        case 'a':
+            addr = optarg;
+            break;
+        case 'p':
+            port = atoi(optarg);
+            break;
         default:
             abort();
         }
@@ -48,12 +58,12 @@ int main(int argc, char **argv)
 
     switch(mode) {
         case 0:
-            printf("select mode client\n");
-            runClient();
+            printf("enter client mode\n");
+            runClient(addr, port);
             break;
         case 1:
-            printf("select mode server\n");
-            runServer();
+            printf("enter server mode\n");
+            runServer(port);
             break;
         default:
             break;

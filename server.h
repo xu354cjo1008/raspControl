@@ -1,1 +1,1 @@
-int runServer(void);
+int runServer(int port);

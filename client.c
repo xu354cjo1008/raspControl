@@ -9,7 +9,7 @@
 #include <errno.h>
 #include <arpa/inet.h>
 
-int runClient()
+int runClient(char *address, int port)
 {
     int sockfd = 0, n = 0;
     char recvBuff[1024];
@@ -25,13 +25,15 @@ int runClient()
     memset(&serv_addr, '0', sizeof(serv_addr));
 
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(5000);
+    serv_addr.sin_port = htons(port);
 
-    if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr)<=0)
+    if(inet_pton(AF_INET, address, &serv_addr.sin_addr)<=0)
     {
         printf("\n inet_pton error occured\n");
         return 1;
     }
+
+    printf("connect to remote: %s:%d\n", address, port);
 
     if(connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0 )
     {
