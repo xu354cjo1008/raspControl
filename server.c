@@ -7,54 +7,37 @@
 #include <string.h>
 #include <sys/types.h>
 #include <time.h>
+#include "queue.h"
+#include "server.h"
 
-typedef struct {
-    int *array;
-    size_t used;
-    size_t size;
-} connArray;
+struct connArray{
+    int fd;
+    char recvBuff[1025];
+    SLIST_ENTRY(connArray) socket_fds;
+};
 
-void initConnArray(connArray *arr, size_t initSize)
-{
-    arr->array = (int *)malloc(initSize * sizeof(int));
-    arr->used = 0;
-    arr->size = initSize;
-}
-
-void connArrayPush(connArray *arr, int conn)
-{
-    if (arr->used == arr->size) {
-        arr->size *= 2;
-        arr->array = (int *)malloc(arr->size * sizeof(int));
-    }
-    arr->array[arr->used++] = conn;
-}
-
-void freeConnArray(connArray *arr)
-{
-    if (arr->array) {
-        free(arr->array);
-        arr->array = NULL;
-    }
-    arr->size = 0;
-    arr->used = 0;
-}
+int max_fd = 0;
+SLIST_HEAD(slisthead, connArray) socket_fds;
 
 int runServer(int port)
 {
 
     int listenfd = 0, connfd = 0;
-    int n = 0;
+    int n = 0, i = 0;
     struct sockaddr_in serv_addr;
 
-    char sendBuff[1025];
-    char recvBuff[1025];
     time_t ticks;
-    connArray conns;
+    fd_set readfds;
+    struct timeval tv;
+    int ret = 0;
+    struct connArray *socketfd, *prev;
+
+    SLIST_INIT(&socket_fds);
+
+    FD_ZERO(&readfds);
 
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
     memset(&serv_addr, '0', sizeof(serv_addr));
-    memset(sendBuff, '0', sizeof(sendBuff));
 
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -64,28 +47,62 @@ int runServer(int port)
 
     printf("listen to port: %d\n", port);
 
-    listen(listenfd, 10);
+    listen(listenfd, 128);
 
-    initConnArray(&conns, 10);
+    FD_SET(listenfd, &readfds);
+    max_fd = listenfd;
+    printf("max_fd: %d\n", max_fd);
 
     while(1)
     {
-        connfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
 
-        printf("accept connection: %d\n", connfd);
+        tv.tv_sec = 2;
+        tv.tv_usec = 500000;
 
-        while ( (n = read(connfd, recvBuff, sizeof(recvBuff)-1)) > 0 )
-        {
-            recvBuff[n] = 0;
-            printf("get: %s\n", recvBuff);
-//            if(fputs(recvBuff, stdout) == EOF)
-//            {
-//                printf("\n Error : Fputs error\n");
-//            }
+        ret = select(max_fd + 1, &readfds, NULL, NULL, &tv);
+        if (ret > 0) {
+            if(FD_ISSET(listenfd, &readfds)) {
+                connfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
+
+                printf("accept connection: %d\n", connfd);
+
+                FD_SET(connfd, &readfds);
+                if (connfd > max_fd) {
+                    max_fd = connfd;
+                }
+
+                socketfd = (struct connArray *)malloc(sizeof(struct connArray));
+
+                if (SLIST_EMPTY(&socket_fds)) {
+                    socketfd->fd = connfd;
+                    SLIST_INSERT_HEAD(&socket_fds, socketfd, socket_fds);
+                } else {
+                    SLIST_FOREACH(socketfd, &socket_fds, socket_fds) {
+                        prev = socketfd;
+                        ++i;
+                    }
+                    socketfd->fd = connfd;
+                    SLIST_INSERT_AFTER(prev, socketfd, socket_fds);
+                }
+                FD_SET(listenfd, &readfds);
+            }
+            SLIST_FOREACH(socketfd, &socket_fds, socket_fds) {
+                if(FD_ISSET(socketfd->fd, &readfds)) {
+                    while ( (n = read(socketfd->fd, socketfd->recvBuff, sizeof(socketfd->recvBuff)-1)) > 0 )
+                    {
+                        socketfd->recvBuff[n] = 0;
+                        printf("get: %s\n", socketfd->recvBuff);
+                        if (strncmp(socketfd->recvBuff, "exit", sizeof("exit")) == 0) {
+                            printf("exit: %d\n", socketfd->fd);
+                            close(socketfd->fd);
+                            FD_CLR(socketfd->fd, &readfds);
+                            SLIST_REMOVE(&socket_fds, socketfd, connArray, socket_fds);
+                            free(socketfd);
+                        }
+                    }
+                }
+            }
         }
-
-        close(connfd);
-        sleep(1);
     }
 
     return 0;

@@ -48,10 +48,10 @@ int runClient(char *address, int port)
         printf( "Enter a value :" );
         scanf("%s", sendBuff);
         printf( "Entered : %s\n", sendBuff);
+        write(sockfd, sendBuff, sizeof(sendBuff));
         if (strncmp(sendBuff, "exit", sizeof("exit")) == 0) {
             break;
         }
-        write(sockfd, sendBuff, sizeof(sendBuff));
     }
 
     return 0;
