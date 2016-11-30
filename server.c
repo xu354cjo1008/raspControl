@@ -7,98 +7,145 @@
 #include <string.h>
 #include <sys/types.h>
 #include <time.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
 #include "queue.h"
 #include "server.h"
 
-struct connArray{
+struct connection{
     int fd;
     char recvBuff[1025];
-    SLIST_ENTRY(connArray) socket_fds;
+    SLIST_ENTRY(connection) socket_fds;
 };
 
-int max_fd = 0;
-SLIST_HEAD(slisthead, connArray) socket_fds;
+struct connMgr{
+    fd_set readfds;
+    fd_set writefds;
+    int max_fd;
+    int listenfd;
+    SLIST_HEAD(slisthead, connection) socket_fds;
+};
+
+static struct connMgr * newConnMgr(void)
+{
+    struct connMgr *c = (struct connMgr *)malloc(sizeof(struct connMgr));
+    SLIST_INIT(&c->socket_fds);
+    FD_ZERO(&c->readfds);
+    FD_ZERO(&c->writefds);
+    return c;
+}
+
+static int connAccept(struct connMgr *s)
+{
+    struct connection *socketfd, *prev;
+    int i = 0;
+    int connfd = accept(s->listenfd, (struct sockaddr*)NULL, NULL);
+
+    if (connfd < 0) {
+        perror("  accept() failed");
+        return -1;
+    }
+
+    printf("accept connect fd: %d\n", connfd);
+
+    FD_SET(connfd, &s->readfds);
+    if (connfd > s->max_fd) {
+        s->max_fd = connfd;
+    }
+
+    if (SLIST_EMPTY(&s->socket_fds)) {
+        socketfd = (struct connection *)malloc(sizeof(struct connection));
+        socketfd->fd = connfd;
+        SLIST_INSERT_HEAD(&s->socket_fds, socketfd, socket_fds);
+    } else {
+        SLIST_FOREACH(socketfd, &s->socket_fds, socket_fds) {
+            prev = socketfd;
+            ++i;
+        }
+        socketfd = (struct connection *)malloc(sizeof(struct connection));
+        socketfd->fd = connfd;
+        SLIST_INSERT_AFTER(prev, socketfd, socket_fds);
+    }
+
+    return connfd;
+}
+
+static void connClose(struct connMgr *s, struct connection *socketfd)
+{
+    printf("exit: %d\n", socketfd->fd);
+    SLIST_REMOVE(&s->socket_fds, socketfd, connection, socket_fds);
+    FD_CLR(socketfd->fd, &s->readfds);
+    close(socketfd->fd);
+    free(socketfd->recvBuff);
+    free(socketfd);
+}
 
 int runServer(int port)
 {
 
-    int listenfd = 0, connfd = 0;
-    int n = 0, i = 0;
-    struct sockaddr_in serv_addr;
+    int flag = 1;
+    struct sockaddr_in serv_addr, client_addr;
 
     time_t ticks;
-    fd_set readfds;
     struct timeval tv;
-    int ret = 0;
-    struct connArray *socketfd, *prev;
+    int rc = 0;
+    struct connection *socketfd, *prev;
 
-    SLIST_INIT(&socket_fds);
+    struct connMgr *connMgr = newConnMgr();
 
-    FD_ZERO(&readfds);
-
-    listenfd = socket(AF_INET, SOCK_STREAM, 0);
+    connMgr->listenfd = socket(AF_INET, SOCK_STREAM, 0);
     memset(&serv_addr, '0', sizeof(serv_addr));
 
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(port);
 
-    bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
+    if (setsockopt(connMgr->listenfd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(int)) < 0) {
+        perror("setsockopt()");
+        return -1;
+    }
 
-    printf("listen to port: %d\n", port);
+//    int flags= fcntl(listenfd, F_GETFL, 0);
+//    fcntl(listenfd, F_SETFL, flags | O_NONBLOCK);
 
-    listen(listenfd, 128);
+    bind(connMgr->listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
 
-    FD_SET(listenfd, &readfds);
-    max_fd = listenfd;
-    printf("max_fd: %d\n", max_fd);
+    printf("listenfd: %d, listen to port: %d\n", connMgr->listenfd, port);
 
-    while(1)
-    {
+    listen(connMgr->listenfd, 3);
+
+    FD_SET(connMgr->listenfd, &connMgr->readfds);
+    connMgr->max_fd = connMgr->listenfd;
+    printf("max_fd: %d\n", connMgr->max_fd);
+
+    while(1) {
 
         tv.tv_sec = 2;
         tv.tv_usec = 500000;
 
-        ret = select(max_fd + 1, &readfds, NULL, NULL, &tv);
-        if (ret > 0) {
-            if(FD_ISSET(listenfd, &readfds)) {
-                connfd = accept(listenfd, (struct sockaddr*)NULL, NULL);
-
-                printf("accept connection: %d\n", connfd);
-
-                FD_SET(connfd, &readfds);
-                if (connfd > max_fd) {
-                    max_fd = connfd;
-                }
-
-                socketfd = (struct connArray *)malloc(sizeof(struct connArray));
-
-                if (SLIST_EMPTY(&socket_fds)) {
-                    socketfd->fd = connfd;
-                    SLIST_INSERT_HEAD(&socket_fds, socketfd, socket_fds);
-                } else {
-                    SLIST_FOREACH(socketfd, &socket_fds, socket_fds) {
-                        prev = socketfd;
-                        ++i;
-                    }
-                    socketfd->fd = connfd;
-                    SLIST_INSERT_AFTER(prev, socketfd, socket_fds);
-                }
-                FD_SET(listenfd, &readfds);
+        rc = select(connMgr->max_fd + 1, &connMgr->readfds, NULL, NULL, &tv);
+        if (rc > 0) {
+            if(FD_ISSET(connMgr->listenfd, &connMgr->readfds)) {
+                connAccept(connMgr);
             }
-            SLIST_FOREACH(socketfd, &socket_fds, socket_fds) {
-                if(FD_ISSET(socketfd->fd, &readfds)) {
-                    while ( (n = read(socketfd->fd, socketfd->recvBuff, sizeof(socketfd->recvBuff)-1)) > 0 )
-                    {
-                        socketfd->recvBuff[n] = 0;
-                        printf("get: %s\n", socketfd->recvBuff);
-                        if (strncmp(socketfd->recvBuff, "exit", sizeof("exit")) == 0) {
-                            printf("exit: %d\n", socketfd->fd);
-                            close(socketfd->fd);
-                            FD_CLR(socketfd->fd, &readfds);
-                            SLIST_REMOVE(&socket_fds, socketfd, connArray, socket_fds);
-                            free(socketfd);
+            SLIST_FOREACH(socketfd, &connMgr->socket_fds, socket_fds) {
+                if(FD_ISSET(socketfd->fd, &connMgr->readfds)) {
+
+                    rc = read(socketfd->fd, socketfd->recvBuff, sizeof(socketfd->recvBuff)-1);
+                    if (rc <= 0) {
+                        if (errno == EAGAIN) {
+                            printf("again\n");
+                            continue;
+                        } else {
+                            perror("  recv() failed");
+                            return -1;
                         }
+                    }
+
+                    socketfd->recvBuff[rc] = 0;
+                    printf("get: %s\n", socketfd->recvBuff);
+                    if (strncmp(socketfd->recvBuff, "exit", sizeof("exit")) == 0) {
+                        connClose(connMgr, socketfd);
                     }
                 }
             }

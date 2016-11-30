@@ -1,5 +1,5 @@
 CC = clang
-CFLAGES = -O2
+CFLAGES = -O0
 INC = -I.
 
 socketTest: socketTest.o server.o client.o

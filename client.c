@@ -33,13 +33,13 @@ int runClient(char *address, int port)
     if(inet_pton(AF_INET, address, &serv_addr.sin_addr)<=0)
     {
         printf("\n inet_pton error occured\n");
-        return 1;
+        return -1;
     }
 
     if(connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0 )
     {
         printf("\n Error : Connect Failed \n");
-        return 1;
+        return -1;
     }
 
     printf("connect to remote: %s:%d\n", address, port);
