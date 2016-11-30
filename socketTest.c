@@ -29,6 +29,7 @@ int main(int argc, char **argv)
     int mode = 0;
     char *addr = "127.0.0.1";
     int port = 80;
+    int rc = 0;
 
     while((c = getopt_long(argc, argv, "hvm:", long_options, &option_index)) != -1) {
         switch(c) {
@@ -59,15 +60,15 @@ int main(int argc, char **argv)
     switch(mode) {
         case 0:
             printf("enter client mode\n");
-            runClient(addr, port);
+            rc = runClient(addr, port);
             break;
         case 1:
             printf("enter server mode\n");
-            runServer(port);
+            rc = runServer(port);
             break;
         default:
             break;
     }
 
-    return 0;
+    return rc;
 }

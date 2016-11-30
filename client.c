@@ -12,7 +12,6 @@
 int runClient(char *address, int port)
 {
     int sockfd = 0, n = 0;
-    char str[100];
     char recvBuff[1024];
     char sendBuff[1024];
     struct sockaddr_in serv_addr;
